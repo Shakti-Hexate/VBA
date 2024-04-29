@@ -1,0 +1,83 @@
+Public RunWhen As Date
+Public refreshOn As Integer
+Public count As Integer
+
+Public Sub RefreshData()
+
+    RunWhen = Now + TimeValue("00:00:29")
+    Application.OnTime EarliestTime:=RunWhen, Procedure:="UpdatePrices", Schedule:=True
+    refreshOn = 1
+
+End Sub
+
+Public Sub CancelRefresh()
+On Error Resume Next
+    Application.OnTime EarliestTime:=RunWhen, Procedure:="UpdatePrices", Schedule:=False
+    refreshOn = 0
+    
+End Sub
+
+Sub UpdatePrices()
+    Dim URL As String
+    Dim params As String
+    params = ThisWorkbook.Sheets("Main").Range("AY1").Value
+    URL = "https://insight.corp.hertshtengroup.com/technicals/api.php?request=setconfigstrnouser&configname=sr3depth&configstr=" & params
+    Debug.Print URL
+    Dim xml As Object
+    Set xml = CreateObject("MSXML2.XMLHTTP")
+    xml.Open "GET", URL, False
+    xml.Send
+    
+    Dim params2 As String
+    Dim URL2 As String
+    params2 = ThisWorkbook.Sheets("Main_ER").Range("AY1").Value
+    URL2 = "https://insight.corp.hertshtengroup.com/technicals/api.php?request=setconfigstrnouser&configname=idepth&configstr=" & params2
+    Debug.Print URL2
+    Dim xml2 As Object
+    Set xml2 = CreateObject("MSXML2.XMLHTTP")
+    xml2.Open "GET", URL2, False
+    xml2.Send
+    
+    Dim params3 As String
+    Dim URL3 As String
+    params3 = ThisWorkbook.Sheets("Main_ZQ").Range("AY1").Value
+    URL3 = "https://insight.corp.hertshtengroup.com/technicals/api.php?request=setconfigstrnouser&configname=zqdepth&configstr=" & params3
+    Debug.Print URL3
+    Dim xml3 As Object
+    Set xml3 = CreateObject("MSXML2.XMLHTTP")
+    xml3.Open "GET", URL3, False
+    xml3.Send
+    
+    Dim params4 As String
+    Dim URL4 As String
+    params4 = ThisWorkbook.Sheets("Main_IR").Range("AY1").Value
+    URL4 = "https://insight.corp.hertshtengroup.com/technicals/api.php?request=setconfigstrnouser&configname=irdepth&configstr=" & params4
+    Debug.Print URL4
+    Dim xml4 As Object
+    Set xml4 = CreateObject("MSXML2.XMLHTTP")
+    xml4.Open "GET", URL4, False
+    xml4.Send
+    
+    Dim params5 As String
+    Dim URL5 As String
+    params5 = ThisWorkbook.Sheets("Main_IB").Range("AY1").Value
+    URL5 = "https://insight.corp.hertshtengroup.com/technicals/api.php?request=setconfigstrnouser&configname=ibdepth&configstr=" & params5
+    Debug.Print URL5
+    Dim xml5 As Object
+    Set xml5 = CreateObject("MSXML2.XMLHTTP")
+    xml5.Open "GET", URL5, False
+    xml5.Send
+    
+    ThisWorkbook.Sheets("Main").Range("BA18").Value = Now()
+    count = count + 1
+    'If (count Mod 6 = 0) Then
+        'Call writeFile
+        
+        'count = 0
+    'End If
+    If refreshOn = 1 Then
+        RefreshData
+    End If
+End Sub
+
+
