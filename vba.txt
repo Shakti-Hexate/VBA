@@ -1,0 +1,403 @@
+Function ValueExistsInColumn(ByVal ws As Worksheet, ByVal columnLetter As String, ByVal searchValue As Variant) As Boolean
+    Dim lastRow As Long
+    Dim rng As Range
+    Dim cell As Range
+    
+    lastRow = ws.Cells(ws.Rows.Count, columnLetter).End(xlUp).Row
+
+    Set rng = ws.Range(columnLetter & "1:" & columnLetter & lastRow)
+
+    For Each cell In rng
+        If cell.Value = searchValue Then
+            ValueExistsInColumn = True
+            Exit Function
+        End If
+    Next cell
+    
+    ValueExistsInColumn = False
+End Function
+
+
+Function set_columns()
+    With ThisWorkbook.Sheets("Analysis")
+        .Cells(1, 4).Value = "Date"
+        .Cells(1, 5).Value = "Volume"
+        .Cells(1, 6).Value = "SOD"
+        .Cells(1, 7).Value = "PL"
+        .Cells(1, 8).Value = "CAP"
+        .Cells(1, 9).Value = "Batch Volume"
+        .Cells(1, 10).Value = "Batch PL"
+        .Cells(1, 11).Value = "Volume Dist"
+    End With
+End Function
+
+Function ClearColumnData(ByVal ws As Worksheet, ByVal columnNumber As Long)
+    Dim lastRow As Long
+    Dim rng As Range
+    Dim cell As Range
+
+    lastRow = ws.Cells(ws.Rows.Count, columnNumber).End(xlUp).Row
+
+    Set rng = ws.Range(ws.Cells(1, columnNumber), ws.Cells(lastRow, columnNumber))
+
+    rng.ClearContents
+End Function
+
+
+Sub CallAPI(tcpCell As Range, ByRef response As String)
+
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Analysis")
+    
+    ClearColumnData ws, 4
+    ClearColumnData ws, 5
+    ClearColumnData ws, 6
+    ClearColumnData ws, 7
+    ClearColumnData ws, 8
+    ClearColumnData ws, 9
+    ClearColumnData ws, 10
+    ClearColumnData ws, 11
+    
+    set_columns
+
+    Dim objHTTP As Object
+    Dim URL As String
+
+    Dim tcpValue As String
+    tcpValue = tcpCell.Value
+
+    URL = "https://insight.corp.hertshtengroup.com/technicals/trademetrics/individual/" & tcpValue & ".js"
+
+    Set objHTTP = CreateObject("WinHttp.WinHttpRequest.5.1")
+    
+    If ValueExistsInColumn(ThisWorkbook.Worksheets("itmlist"), "A", tcpValue) Then
+    
+    objHTTP.Open "GET", URL, False
+
+    objHTTP.send
+
+    response = objHTTP.responseText
+    Else
+    End
+    End If
+    Set objHTTP = Nothing
+End Sub
+
+
+Sub TestCallAPI(response As String)
+    
+    Dim outputCell As Range
+    Dim tcpCell As Range
+   
+    Set tcpCell = ThisWorkbook.Sheets("Analysis").Range("A3")
+
+    CallAPI tcpCell, response
+End Sub
+
+Function FormatDateWithHyphens(datestring As String) As String
+    Dim formattedDate As String
+    
+    If Len(datestring) = 8 Then
+        formattedDate = Left(datestring, 4) & "-" & Mid(datestring, 5, 2) & "-" & Right(datestring, 2)
+    Else
+        formattedDate = "Invalid date string format"
+    End If
+    
+    FormatDateWithHyphens = formattedDate
+End Function
+
+Function PushElementToArray(ByRef arr() As String, ByVal element As String)
+    Dim currentSize As Long
+    
+    If IsEmpty(arr) Then
+        ReDim arr(1 To 1)
+        arr(1) = element
+    Else
+        currentSize = UBound(arr)
+        ReDim Preserve arr(1 To currentSize + 1)
+        arr(currentSize + 1) = element
+    End If
+End Function
+
+Function JoinNonEmpty(arr As Variant, delimiter As String) As String
+    Dim result As String
+    Dim i As Long
+    
+    For i = LBound(arr) To UBound(arr)
+        If arr(i) <> "" Then
+            If result <> "" Then
+                result = result & delimiter & arr(i)
+            Else
+                result = arr(i)
+            End If
+        End If
+    Next i
+    
+    JoinNonEmpty = result
+End Function
+
+
+Sub DataParse()
+    Dim response As String
+    Dim result As Object
+    Dim tcpCell As Range
+    
+    Set tcpCell = ThisWorkbook.Sheets("Analysis").Range("A3")
+    Dim tcpValue As String
+    tcpValue = tcpCell.Value
+    
+    TestCallAPI response
+    
+    Set result = JsonConverter.ParseJson(response)
+    
+    Dim atr As Variant
+    
+    Dim itms(30) As String
+    
+    Dim ci As Long
+    
+    For Each atr In result
+        
+        Dim dat As Variant
+        For Each dat In result(atr)
+        
+            If dat = "batchitms" Then
+            Dim i As Long
+            i = 0
+            
+                Dim im As Variant
+                For Each im In result(atr)(dat)
+                
+                    itms(i) = im
+                    i = i + 1
+
+                Next im
+                
+            End If
+            
+        Next dat
+        
+    Next atr
+    
+    For Each atr In result
+        Dim data As Variant
+        
+        Dim rownum As Long
+        rownum = 2
+            
+        For Each data In result(atr)
+               
+                If result(atr)(data).Count = 3 Then
+                    
+                    Dim datestring As String
+                    Dim temp As String
+                    temp = data
+                    
+                    datestring = FormatDateWithHyphens(temp)
+                    Dim ws As Worksheet
+                    Set ws = ThisWorkbook.Sheets("Analysis")
+                    ws.Cells(rownum, 4).Value = datestring
+                    rownum = rownum + 1
+                    
+                    Dim subdata As Variant
+                    For Each subdata In result(atr)(data)
+                        
+                        If subdata = "pldata" Then
+                            
+                            Dim itm As Variant
+                            For Each itm In result(atr)(data)(subdata)
+                                
+                                If itm = tcpValue Then
+                                    
+                                    Dim pl As Variant
+                                    For Each pl In result(atr)(data)(subdata)(itm)
+                                        
+                                        If pl = "np" Then
+                                            ws.Cells(rownum - 1, 7).Value = result(atr)(data)(subdata)(itm)(pl)
+                                        End If
+                                        
+                                        If pl = "cb" Then
+                                            ws.Cells(rownum - 1, 8).Value = result(atr)(data)(subdata)(itm)(pl)
+                                        End If
+                                        
+                                        If pl = "v" Then
+                                            ws.Cells(rownum - 1, 5).Value = result(atr)(data)(subdata)(itm)(pl)
+                                        End If
+                                        
+                                    Next pl
+                                
+                                End If
+                            
+                            Next itm
+                            
+                            Dim batch_pl(0 To 30) As String
+                            Dim volume_dist(0 To 30) As String
+                            Dim j As Long
+                            Dim x As Long
+                            
+                            x = 0
+                            j = 0
+                            
+                            For Each im In itms
+                                
+                                For Each itm In result(atr)(data)(subdata)
+                                    
+                                    If im = tcpValue Then
+                                        GoTo nextiteration
+                                    End If
+                                    
+                                    If itm = im Then
+                                        
+                                        For Each pl In result(atr)(data)(subdata)(itm)
+                                            
+                                            If pl = "np" Then
+                                                
+                                                batch_pl(j) = result(atr)(data)(subdata)(itm)(pl)
+                                                j = j + 1
+                                                
+                                            End If
+                                            
+                                            If pl = "v" Then
+                                                
+                                                volume_dist(x) = result(atr)(data)(subdata)(itm)(pl)
+                                                x = x + 1
+                                                
+                                            End If
+                                            
+                                        Next pl
+                                        
+                                    End If
+                                    
+                                Next itm
+                                
+nextiteration:
+                            Next im
+                                
+                            Dim batch_plString As String
+                            batch_plString = JoinNonEmpty(batch_pl, ",")
+                            
+                            ws.Cells(rownum - 1, 10).Value = batch_plString
+                            
+                            Dim volume_distString As String
+                            volume_distString = JoinNonEmpty(volume_dist, ",")
+                            
+                            ws.Cells(rownum - 1, 11).Value = volume_distString
+                            
+                        End If
+                        
+                        If subdata = "sodrt" Then
+                            
+                            Dim volume As Long
+                            Dim sod As Long
+                            
+                            sod = 0
+                            volume = 0
+                            
+                            Dim cont As Variant
+                            For Each cont In result(atr)(data)(subdata)
+                                
+                                Dim positive As Long
+                                Dim negative As Long
+                                positive = 0
+                                negative = 0
+                                
+                                Dim exp As Variant
+                                For Each exp In result(atr)(data)(subdata)(cont)
+                                    
+                                    'Dim vol As Long
+                                    'vol = result(atr)(data)(subdata)(cont)(exp)(1)
+                                    'volume = volume + vol
+                                    
+                                    Dim sd As Long
+                                    sd = result(atr)(data)(subdata)(cont)(exp)(2)
+                                    
+                                    If sd > 0 Then
+                                        positive = positive + sd
+                                    End If
+                                    
+                                    If sd < 0 Then
+                                        negative = negative + sd
+                                    End If
+                                    
+                                Next exp
+                                
+                                If Abs(positive) > Abs(negative) Then
+                                    sod = sod + Abs(positive)
+                                Else
+                                    sod = sod + Abs(negative)
+                                End If
+                                
+                            Next cont
+                            
+                            'ws.Cells(rownum - 1, 5).Value = volume
+                            ws.Cells(rownum - 1, 6).Value = sod
+                            
+                        End If
+                        
+                        If subdata = "batchrt" Then
+                            
+                            Dim batch_volume As Long
+                            'Dim sod As Long
+                            
+                            'sod = 0
+                            batch_volume = 0
+                            
+                            Dim contr As Variant
+                            For Each contr In result(atr)(data)(subdata)
+                                
+                                'Dim positive As Long
+                                'Dim negative As Long
+                                'positive = 0
+                                'negative = 0
+                                
+                                Dim exp2 As Variant
+                                For Each exp2 In result(atr)(data)(subdata)(contr)
+                                    
+                                    Dim vol2 As Long
+                                    vol2 = result(atr)(data)(subdata)(contr)(exp2)(1)
+                                    batch_volume = batch_volume + vol2
+                                    
+                                    'Dim sd As Long
+                                    'sd = result(atr)(data)(subdata)(cont)(exp)(2)
+                                    
+                                    'If sd > 0 Then
+                                        'positive = positive + sd
+                                    'End If
+                                    
+                                    'If sd < 0 Then
+                                        'negative = negative + sd
+                                    'End If
+                                    
+                                Next exp2
+                                
+                                'If Abs(positive) > Abs(negative) Then
+                                    'sod = sod + Abs(positive)
+                                'Else
+                                    'sod = sod + Abs(negative)
+                                'End If
+                                
+                            Next contr
+                            
+                            ws.Cells(rownum - 1, 9).Value = batch_volume
+                            
+                        End If
+                        
+                    Next subdata
+                
+                End If
+            
+            
+        Next data
+        
+        
+    Next atr
+    
+    For Each el In itms
+        Debug.Print (el)
+    Next el
+
+End Sub
+
+
+
+
