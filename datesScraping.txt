@@ -1,0 +1,297 @@
+Dim xmlString As String
+Dim xmlString2 As String
+Dim scheduleURl As String
+Dim htmlString As String
+
+Public RunWhen As Date
+Public refreshOn As Integer
+Public count As Integer
+
+Public Sub RefreshData()
+
+    RunWhen = Now + TimeValue("00:00:5")
+    Application.OnTime EarliestTime:=RunWhen, Procedure:="MakeGETRequest", schedule:=True
+    refreshOn = 1
+
+End Sub
+
+Public Sub CancelRefresh()
+On Error Resume Next
+    Application.OnTime EarliestTime:=RunWhen, Procedure:="MakeGETRequest", schedule:=False
+    refreshOn = 0
+    
+End Sub
+
+Sub MakeGETRequest()
+    Dim xhr As Object
+    Dim url As String
+    Dim responseText As String
+    
+    Dim rand As Integer
+    rand = Int((100 - 1 + 1) * Rnd + 1)
+
+    url = "https://www.federalreserve.gov/feeds/press_monetary.xml?rand=" & rand
+    Debug.Print url
+
+    Set xhr = CreateObject("MSXML2.XMLHTTP")
+
+    xhr.Open "GET", url, False
+
+    xhr.send
+
+    If xhr.Status = 200 Then
+      
+        responseText = xhr.responseText
+        xmlString = responseText
+        ParseRSSFeed
+        'Debug.Print responseText
+    Else
+        
+        Debug.Print "GET request failed. Status code: " & xhr.Status
+    End If
+
+    Set xhr = Nothing
+    
+    ThisWorkbook.Sheets("automate").Range("M7").Value = Now()
+    count = count + 1
+    'If (count Mod 6 = 0) Then
+        'Call writeFile
+        
+        'count = 0
+    'End If
+    If refreshOn = 1 Then
+        RefreshData
+    End If
+    
+End Sub
+
+
+Function ParseRSSFeed()
+    Dim xmlDoc As Object
+    Dim itemNodes As Object
+    Dim itemNode As Object
+    Dim title As String
+    Dim link As String
+    
+    Set xmlDoc = CreateObject("MSXML2.DOMDocument")
+
+    xmlDoc.LoadXML xmlString
+
+    If xmlDoc.parseError <> 0 Then
+        MsgBox "Error loading XML:" & vbCrLf & xmlDoc.parseError.reason
+        Exit Function
+    End If
+    
+    Set itemNodes = xmlDoc.SelectNodes("//channel/item")
+
+    For Each itemNode In itemNodes
+
+        title = itemNode.SelectSingleNode("title").Text
+        link = itemNode.SelectSingleNode("link").Text
+        
+        Dim mainString As String
+        Dim subString As String
+        Dim mainStringLower As String
+        
+        mainString = title
+        subString = " schedule "
+        mainStringLower = LCase(mainString)
+        
+        If InStr(1, mainStringLower, subString) > 0 Then
+            scheduleURl = link
+            GetDates
+            Debug.Print link
+        Else
+            Debug.Print "Substring not found in the main string."
+        End If
+
+    Next itemNode
+    
+    'scheduleURl = "https://www.federalreserve.gov/newsevents/pressreleases/monetary20220624a.htm"
+    'GetDates
+
+    Set xmlDoc = Nothing
+End Function
+
+Function GetDates()
+    Dim xhr As Object
+    Dim url As String
+    Dim responseText As String
+
+    url = scheduleURl
+
+    Set xhr = CreateObject("MSXML2.XMLHTTP")
+
+    xhr.Open "GET", url, False
+
+    xhr.send
+
+    If xhr.Status = 200 Then
+      
+        responseText = xhr.responseText
+        xmlString2 = responseText
+        ParseMeetingDates
+        'Debug.Print responseText
+    Else
+        
+        Debug.Print "GET request failed. Status code: " & xhr.Status
+    End If
+
+    Set xhr = Nothing
+    
+End Function
+
+Function ParseMeetingDates()
+
+    Dim responseString As String
+    responseString = xmlString2
+
+    Dim startPos As Long
+    Dim endPos As Long
+    Dim dateStr As String
+    Dim dateStartTag As String
+    Dim dateEndTag As String
+
+    dateStartTag = "<p>"
+    dateEndTag = "</p>"
+
+    startPos = 1
+    
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Sheet2")
+    Dim i As Integer
+    i = 7
+    
+    Do
+        startPos = InStr(startPos, responseString, dateStartTag)
+        If startPos = 0 Then Exit Do
+
+        endPos = InStr(startPos, responseString, dateEndTag)
+        If endPos = 0 Then Exit Do
+
+        dateStr = Mid(responseString, startPos + Len(dateStartTag), endPos - startPos - Len(dateStartTag))
+
+        dateStr = Trim(dateStr)
+
+        If IsValidMeetingDate(dateStr) Then
+            'Debug.Print dateStr
+            ws.Cells(i, 17).Value = dateStr
+            i = i + 1
+        End If
+
+        startPos = endPos + Len(dateEndTag)
+        
+    Loop
+    
+    ExportToHTMLTable
+
+End Function
+
+Function IsValidMeetingDate(dateStr As String) As Boolean
+    
+    On Error Resume Next
+
+    Dim validMonths As Variant
+    validMonths = Array("January", "February", "March", "April", "May", "June", _
+                        "July", "August", "September", "October", "November", "December")
+    
+    Dim month As Variant
+    For Each month In validMonths
+        If InStr(1, dateStr, month, vbTextCompare) > 0 Then
+            IsValidMeetingDate = True
+            Exit Function
+        End If
+    Next month
+
+    IsValidMeetingDate = False
+    
+    On Error GoTo 0
+End Function
+ 
+Function ExportToHTMLTable()
+    Dim rng As Range
+    Dim rowCount As Integer, colCount As Integer
+    Dim r As Integer, c As Integer
+
+    Set rng = ThisWorkbook.Sheets("automate").Range("B5:J13")
+
+    rowCount = rng.Rows.count
+    colCount = rng.Columns.count
+
+    htmlString = "<table border='1' cellpadding='5'>"
+
+    For r = 1 To rowCount
+        htmlString = htmlString & "<tr>"
+
+        For c = 1 To colCount
+            Dim temp As Variant
+            temp = rng.Cells(r, c).Value
+        
+            If VarType(temp) = vbDouble Then
+                temp = Round(temp, 2)
+            End If
+
+            Dim cellColor As String
+            Dim cellWidth As String
+            
+            If r = 1 Or c = 1 Then
+                cellColor = "#ADD8E6"
+                cellWidth = "150px"
+            ElseIf UCase(temp) = "SHORT" Then
+                cellColor = "red"
+                cellWidth = ""
+            ElseIf UCase(temp) = "LONG" Then
+                cellColor = "green"
+                cellWidth = ""
+            Else
+                cellColor = ""
+                cellWidth = ""
+            End If
+
+            If cellColor <> "" Then
+                htmlString = htmlString & "<td bgcolor='" & cellColor & "' style='width:" & cellWidth & "'>" & temp & "</td>"
+            Else
+                htmlString = htmlString & "<td style='width:" & cellWidth & "'>" & temp & "</td>"
+            End If
+        Next c
+
+        htmlString = htmlString & "</tr>"
+    Next r
+    
+    htmlString = htmlString & "</table>"
+
+    'Debug.Print htmlString
+    
+    MakePOSTRequest
+    
+End Function
+
+
+
+Function MakePOSTRequest()
+    Dim request As Object
+    Dim url As String
+    Dim responseData As String
+
+    url = "https://prod-174.westeurope.logic.azure.com:443/workflows/4971068c18454f26849d92eccad4012d/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=1HunDcWayQ77nV5daPt_NQlNHKlTG8bfHZm0PV8-zuU"
+
+    Set request = CreateObject("MSXML2.XMLHTTP")
+
+    request.Open "POST", url, False
+
+    request.setRequestHeader "Content-Type", "text/html"
+
+    request.send htmlString
+    refreshOn = 0
+
+    If request.Status = 200 Then
+        responseData = request.responseText
+        Debug.Print "Response Data: " & responseData
+    Else
+        Debug.Print "Request failed with status: " & request.Status
+    End If
+
+    Set request = Nothing
+End Function
+
+
